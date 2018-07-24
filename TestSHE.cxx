@@ -50,6 +50,8 @@ extern "C" void makegriddh_wrapper_(double* grid, int* n, double* cilm,
 extern "C" void shpowerspectrum_wrapper_(double* cilm, int* lmax,
 	double* pspectrum);
 
+extern "C" void plmon_wrapper_(double* p, int* lmax, double* z);
+
 int main(){
 
     // Read the polydata
@@ -63,8 +65,12 @@ int main(){
     Eigen::Map<Eigen::Matrix3Xd> ptsMat((double_t*)pointCloud->GetPoints()
 	    ->GetData()->GetVoidPointer(0),3,N);
 
-    // Calculate average radius
-    double_t R = ptsMat.colwise().norm().mean();
+    // Test function: 2*Y_1,-1 + Y_10 + 3*Y_11, so l=1, m=-1,0,1
+    int lmax = 7;
+    Eigen::VectorXd plms( (lmax + 1)*(lmax + 2)/2 );
+    auto Plm = [&plms](const int l, const int m){
+	return plms( l*(l+1)/2 + m );
+    };
 
     // Calculate points on a sphere of average radius and displacements
     vtkNew<vtkPoints> spherePts;
@@ -74,9 +80,16 @@ int main(){
     for(auto i = 0; i < N; ++i){
 	Eigen::Vector3d p, q;
 	pointCloud->GetPoint(i, &p(0));
-	q =  R*p.normalized();
+	q =  p.normalized();
 	spherePts->InsertNextPoint( &q(0) );
-	displacements->InsertNextTuple1(p.norm() - R);
+	double_t x = q(0);
+	double_t y = q(1);
+	double_t z = q(2);
+	plmon_wrapper_(plms.data(), &lmax, &z);
+	auto phi = std::atan2(y,x);
+	auto disp = 2*Plm(1,-1)*std::sin(phi) + Plm(1,0) +
+	    3*Plm(1,1)*std::cos(phi);
+	displacements->InsertNextTuple1(disp);
     }
 
     // Create a mesh on the sphere
@@ -105,7 +118,7 @@ int main(){
     }
     sphere->SetPolys( triangles );
     vtkNew<vtkPolyDataWriter> writer;
-    writer->SetFileName("AverageSphere.vtk");
+    writer->SetFileName("TestShape.vtk");
     writer->SetInputData(sphere);
     writer->Write();
 
@@ -117,27 +130,25 @@ int main(){
 
     //**********************************************************************//
     // Create the Gauss-Lengendre grid
-    int nlat, nlong, lmax = 7;
+    int nlat, nlong;
     Eigen::VectorXd latglq(lmax + 1);
     Eigen::VectorXd longlq(2*lmax + 1);
     glqgridcoord_wrapper_(latglq.data(), longlq.data(), &lmax, &nlat, &nlong);
 
     // Find the cell to which each point of the grid belongs and set its value
     // by linear interpolation
-    auto coords = [&R]( const double_t T, const double_t P ){
+    auto coords = []( const double_t T, const double_t P ){
 	Eigen::Vector3d X;
 	auto SinT = std::sin(T*M_PI/180.0);
-	X << R*SinT*std::cos(P*M_PI/180.0), R*SinT*std::sin(P*M_PI/180.0),
-	  R*std::cos( T*M_PI/180.0);
+	X << SinT*std::cos(P*M_PI/180.0), SinT*std::sin(P*M_PI/180.0),
+	  std::cos( T*M_PI/180.0);
 	return X;
     };
-    /*
-       vtkNew<vtkPoints> glqPoints;
-       vtkNew<vtkCellArray> glqVerts;
-       vtkNew<vtkDoubleArray> glqDisp;
-       glqDisp->SetName("GLQDisp");
-       glqDisp->SetNumberOfComponents(3);
-       */
+    vtkNew<vtkPoints> glqPoints;
+    vtkNew<vtkCellArray> glqVerts;
+    vtkNew<vtkDoubleArray> glqDisp;
+    glqDisp->SetName("GLQDisp");
+    glqDisp->SetNumberOfComponents(3);
     Eigen::VectorXd gridglq((lmax + 1)*(2*lmax + 1));
     Eigen::VectorXd plx( (lmax + 1)*(lmax + 1)*(lmax + 2)/2 );
     Eigen::VectorXd w( lmax + 1 ), zero( lmax + 1 );
@@ -146,7 +157,7 @@ int main(){
     shglq_wrapper_(&lmax, zero.data(), w.data(), plx.data() );
 
     clock_t t = clock();
-    for(auto z = 0; z < 1000; ++z){
+    for(auto z = 0; z < 1; ++z){
 	for( auto j = 0; j < 2*lmax + 1; ++j ){
 	    for( auto i = 0; i < lmax + 1; ++i ){
 		// Get the spherical coordinate
@@ -169,28 +180,26 @@ int main(){
 		    weights[0]*displacements->GetTuple1(pointIds->GetId(0)) +
 		    weights[1]*displacements->GetTuple1(pointIds->GetId(1)) +
 		    weights[2]*displacements->GetTuple1(pointIds->GetId(2));
-		//glqPoints->InsertNextPoint( &X(0) );
-		//Eigen::Vector3d disp;
-		//disp = gridglq(i + (lmax + 1)*j)*X.normalized();
-		//glqDisp->InsertNextTuple( &disp(0) );
+		glqPoints->InsertNextPoint( &X(0) );
+		Eigen::Vector3d disp;
+		disp = gridglq(i + (lmax + 1)*j)*X.normalized();
+		glqDisp->InsertNextTuple( &disp(0) );
 	    }
 	}
-	/*
-	   vtkNew<vtkPolyData> glqBody;
-	   glqBody->SetPoints( glqPoints );
-	   glqBody->GetPointData()->SetVectors( glqDisp );
-	   writer->SetInputData( glqBody );
-	   writer->SetFileName( "GLQBody.vtk" );
-	   writer->Write();
-	   */
+	vtkNew<vtkPolyData> glqBody;
+	glqBody->SetPoints( glqPoints );
+	glqBody->GetPointData()->SetVectors( glqDisp );
+	writer->SetInputData( glqBody );
+	writer->SetFileName( "GLQBody.vtk" );
+	writer->Write();
 
 	// Expand using Gauss-Legendre Quadrature and get the power spectrum
 	shexpandglq_wrapper_( cilm1.data(), &lmax, gridglq.data(), w.data(),
 		plx.data());
     }
     t = clock() - t;
-    std::cout<< "Time for 1000 steps GLQ = " << ((float)t)/CLOCKS_PER_SEC
-       	<< std::endl;
+    std::cout<< "Time for 1 steps GLQ = " << ((float)t)/CLOCKS_PER_SEC
+	<< std::endl;
 
     shpowerspectrum_wrapper_( cilm1.data(), &lmax, pspectrum1.data() );
     // Cross-check
@@ -201,18 +210,16 @@ int main(){
     //**********************************************************************//
     // Expand using Driscol-Healy and get the power spectrum
     int ndh = 2*(lmax + 1);
-    /*
-       vtkNew<vtkPoints> DHPoints;
-       vtkNew<vtkCellArray> DHVerts;
-       vtkNew<vtkDoubleArray> DHDisp;
-       DHDisp->SetName("DHGridDisp");
-       DHDisp->SetNumberOfComponents(3);
-       */
+    vtkNew<vtkPoints> DHPoints;
+    vtkNew<vtkCellArray> DHVerts;
+    vtkNew<vtkDoubleArray> DHDisp;
+    DHDisp->SetName("DHGridDisp");
+    DHDisp->SetNumberOfComponents(3);
     Eigen::VectorXd gridDH( ndh*ndh );
     Eigen::VectorXd cilm2( ndh*ndh/2 ), pspectrum2(lmax + 1);
 
     t = clock();
-    for(auto z = 0; z < 1000; ++z){
+    for(auto z = 0; z < 1; ++z){
 	for( auto i = 0; i < ndh; ++i ){
 	    auto latDH = i*(180.0/ndh);
 	    for( auto j = 0; j < ndh; ++j ){
@@ -237,27 +244,25 @@ int main(){
 		    weights[0]*displacements->GetTuple1(pointIds->GetId(0)) +
 		    weights[1]*displacements->GetTuple1(pointIds->GetId(1)) +
 		    weights[2]*displacements->GetTuple1(pointIds->GetId(2));
-		//DHPoints->InsertNextPoint( &X(0) );
-		//Eigen::Vector3d disp;
-		//disp = gridDH(j + ndh*i)*X.normalized();
-		//DHDisp->InsertNextTuple( &disp(0) );
+		DHPoints->InsertNextPoint( &X(0) );
+		Eigen::Vector3d disp;
+		disp = gridDH(j + ndh*i)*X.normalized();
+		DHDisp->InsertNextTuple( &disp(0) );
 	    }
 	}
-	/*
-	   vtkNew<vtkPolyData> DHBody;
-	   DHBody->SetPoints( DHPoints );
-	   DHBody->GetPointData()->SetVectors( DHDisp );
-	   writer->SetInputData( DHBody );
-	   writer->SetFileName( "DHBody.vtk" );
-	   writer->Write();
-	   */
+	vtkNew<vtkPolyData> DHBody;
+	DHBody->SetPoints( DHPoints );
+	DHBody->GetPointData()->SetVectors( DHDisp );
+	writer->SetInputData( DHBody );
+	writer->SetFileName( "DHBody.vtk" );
+	writer->Write();
 
 	// Finally expand using DH scheme
 	shexpanddh_wrapper_(gridDH.data(), &ndh, cilm2.data(), &lmax);
     }
     t = clock() - t;
-    std::cout<< "Time for 1000 steps DH = " << ((float)t)/CLOCKS_PER_SEC
-       	<< std::endl;
+    std::cout<< "Time for 1 steps DH = " << ((float)t)/CLOCKS_PER_SEC
+	<< std::endl;
 
     shpowerspectrum_wrapper_(cilm2.data(), &lmax, pspectrum2.data());
     // Cross-check
@@ -271,7 +276,7 @@ int main(){
     Eigen::VectorXd cilm3(2*(lmax+1)*(lmax+1)), pspectrum3(lmax + 1);
     double_t chi2;
     t = clock();
-    for(auto z = 0; z < 1000; ++z){
+    for(auto z = 0; z < 1; ++z){
 	for( auto i = 0; i < N; ++i ){
 	    double_t X[3], x, y, z;
 	    spherePts->GetPoint(i, X);
@@ -285,8 +290,8 @@ int main(){
 		lonLSQ.data(), &N, &lmax, &chi2);
     }
     t = clock() - t;
-    std::cout<< "Time for 1000 steps LSQ = " << ((float)t)/CLOCKS_PER_SEC
-       	<< std::endl;
+    std::cout<< "Time for 1 steps LSQ = " << ((float)t)/CLOCKS_PER_SEC
+	<< std::endl;
 
     shpowerspectrum_wrapper_(cilm3.data(), &lmax, pspectrum3.data());
     // Cross-check
@@ -305,6 +310,20 @@ int main(){
 	<< pspectrum2.transpose() << std::endl;
     std::cout<< " Power spectrum from LSQ = " << std::endl
 	<< pspectrum3.transpose() << std::endl;
+
+    // Print the coefficients
+    std::cout<< "l\tm\tAlm_GLQ\tAlm_DH\tAlm_LSQ" << std::endl;
+    for( int l = 0; l <= lmax; ++l ){
+	for( int m = -l; m <=l; ++m ){
+	    int i = m < 0? 1 : 0;
+	    int n = m < 0? -m: m;
+	    std::cout<< l << "\t" << m << "\t" 
+		<< cilm1( i + 2*(l + n*(lmax + 1)) )<< "\t"
+		<< cilm2( i + 2*(l + n*(lmax + 1)) )<< "\t"
+		<< cilm3( i + 2*(l + n*(lmax + 1)) )<< "\t"
+		<< std::endl;
+	}
+    }
 
     //**********************************************************************//
     // Now we will subdivide the sphere polydata and calculate the
@@ -334,7 +353,7 @@ int main(){
 	for( auto i = 0; i < N2; ++i ){
 	    Eigen::Vector3d X, Xpd;
 	    sphere2->GetPoint( i, &X(0) );
-	    Xpd = (R + grid2(i))*X.normalized();
+	    Xpd = (1.0 + grid2(i))*X.normalized();
 	    newPoints->InsertNextPoint( &Xpd(0) );
 	}
 	vtkNew<vtkPolyData> temp;
@@ -347,9 +366,9 @@ int main(){
 	writer->Write();
     };
 
-    writeResult( cilm1, "LSQ_Result.vtk" );
-    writeResult( cilm2, "GLQ_Result.vtk" );
-    writeResult( cilm3, "DH_Result.vtk" );
+    //writeResult( cilm1, "LSQ_Result.vtk" );
+    //writeResult( cilm2, "GLQ_Result.vtk" );
+    //writeResult( cilm3, "DH_Result.vtk" );
 
     return 0;
 }

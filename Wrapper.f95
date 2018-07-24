@@ -51,10 +51,8 @@ subroutine GLQGridCoord_Wrapper(latglq, longlq, lmax, nlat, nlong)
     integer, intent(in) :: lmax
     integer, intent(out) :: nlat, nlong
     real*8, intent(out) :: latglq(lmax + 1), longlq(2*lmax + 1)
-    integer :: exitstatus
-    exitstatus = 0
 
-    call GLQGridCoord(latglq, longlq, lmax, nlat, nlong, exitstatus)
+    call GLQGridCoord(latglq, longlq, lmax, nlat, nlong)
 
 end subroutine GLQGridCoord_Wrapper
 
@@ -66,14 +64,13 @@ subroutine SHGLQ_Wrapper(lmax, zero, w, plx)
 
     integer, intent(in) :: lmax
     real*8, intent(out) :: zero(lmax + 1), w(lmax + 1)
-    real*8, intent(out), optional :: plx(1:lmax+1, 1:(lmax+1)*(lmax+2)/2)
-    integer :: norm, csphase, cnorm, exitstatus
+    real*8, intent(out) :: plx(1:lmax+1, 1:(lmax+1)*(lmax+2)/2)
+    integer :: norm, csphase, cnorm
     norm = 4
     csphase = 1
     cnorm = 0
-    exitstatus = 0
-    call SHGLQ(lmax, zero, w, plx, norm, csphase, cnorm, exitstatus)
-    
+    call SHGLQ(lmax, zero, w, plx, norm, csphase, cnorm)
+
 end subroutine SHGLQ_Wrapper
 
 !----------------------------------------------------------------------!
@@ -86,13 +83,12 @@ subroutine SHExpandGLQ_Wrapper(cilm, lmax, gridglq, w, plx)
     real*8, intent(in) :: w(lmax + 1), gridglq(lmax + 1, 2*lmax + 1)
     real*8, intent(in) :: plx(1:lmax+1, 1:(lmax+1)*(lmax+2)/2)
     real*8, intent(out) :: cilm(2,lmax + 1,lmax + 1)
-    integer :: norm, csphase, exitstatus
+    integer :: norm, csphase
     norm = 4
     csphase = 1
-    exitstatus = 0
-    
+
     call SHExpandGLQ(cilm, lmax, gridglq, w, plx, norm = norm, &
-        csphase = csphase, exitstatus = exitstatus)
+        csphase = csphase)
 end subroutine SHExpandGLQ_Wrapper
 
 !----------------------------------------------------------------------!
@@ -105,13 +101,12 @@ subroutine MakeGridGLQ_Wrapper(gridglq, cilm, lmax, plx)
     real*8, intent(in) :: cilm(2,lmax + 1,lmax + 1)
     real*8, intent(in) :: plx(1:lmax+1, 1:(lmax+1)*(lmax+2)/2)
     real*8, intent(out) :: gridglq(lmax + 1, 2*lmax + 1)
-    integer :: norm, csphase, exitstatus
+    integer :: norm, csphase
     norm = 4
     csphase = 1
-    exitstatus = 0
 
-    call MakeGridGLQ(gridglq, cilm, lmax, plx, norm = norm, csphase = csphase,&
-        exitstatus = exitstatus)
+    call MakeGridGLQ(gridglq, cilm, lmax, plx, norm = norm, csphase = csphase)
+
 end subroutine MakeGridGLQ_Wrapper
 
 !----------------------------------------------------------------------!
@@ -161,3 +156,19 @@ subroutine SHPowerSpectrum_Wrapper(cilm, lmax, pspectrum)
     call SHPowerSpectrum(cilm, lmax, pspectrum)
 
 end subroutine SHPowerSpectrum_Wrapper
+
+!----------------------------------------------------------------------!
+subroutine PlmON_Wrapper(p, lmax, z)
+    use SHTools, only: PlmON
+
+    implicit none
+    integer, intent(in) :: lmax
+    real*8, intent(out) :: p( (lmax + 1)*(lmax + 2)/2 )
+    real*8, intent(in)  :: z
+    integer :: csphase, cnorm
+    csphase = 1
+    cnorm = 0
+
+    call PlmON(p, lmax, z, csphase, cnorm)
+
+end subroutine PlmON_Wrapper

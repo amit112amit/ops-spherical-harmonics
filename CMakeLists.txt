@@ -32,4 +32,10 @@ target_include_directories( pointCloudSH PRIVATE ${VTK_INCLUDE_DIRS} )
 target_link_libraries( pointCloudSH PRIVATE shtoolswrapper ${VTK_LIBRARIES}
     Eigen3::Eigen )
 
+add_executable( testCode TestSHE.cxx )
+target_include_directories( testCode PRIVATE ${VTK_INCLUDE_DIRS} )
+target_link_libraries( testCode PRIVATE shtoolswrapper ${VTK_LIBRARIES}
+    Eigen3::Eigen )
+
 add_dependencies( pointCloudSH shtoolswrapper )
+add_dependencies( testCode shtoolswrapper )
