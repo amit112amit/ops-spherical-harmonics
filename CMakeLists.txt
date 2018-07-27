@@ -14,7 +14,7 @@ find_package (Eigen3 3.3 REQUIRED NO_MODULE)
 
 find_package(LAPACK REQUIRED)
 
-find_library( FFTW3_LIBRARY "fftw3" HINTS ${SHTOOLS_ROOT} )
+find_library( FFTW3_LIBRARY "fftw3" HINTS ${FFTW3_ROOT} )
 
 find_library( SHTOOLS_LIBRARY "SHTOOLS" HINTS ${SHTOOLS_ROOT} )
 find_path( SHTOOLS_INCLUDE_DIR "shtools.mod" PATHS ${SHTOOLS_ROOT} PATH_SUFFIXES "include")
